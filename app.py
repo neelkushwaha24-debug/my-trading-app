@@ -19,11 +19,10 @@ if 'shared_ticker' not in st.session_state:
 if 'auto_run' not in st.session_state:
     st.session_state.auto_run = False
 
-# जादुई कॉलबैक: जो स्कैनर से शेयर लाएगा और ऑटो-रन चालू करेगा
 def switch_to_analyzer(ticker_symbol):
     st.session_state.shared_ticker = ticker_symbol
     st.session_state.app_mode = "📊 एडवांस एनालाइज़र (All-in-One)"
-    st.session_state.auto_run = True  # बिना बटन दबाए एनालिसिस शुरू करने का कमांड!
+    st.session_state.auto_run = True
 
 # ---------------------------------------------------------
 # 1. डेटाबेस लोडर
@@ -96,7 +95,7 @@ app_mode = st.sidebar.radio("मोड चुनें:", ["📊 एडवां
 # मोड 1: एडवांस एनालाइज़र
 # =========================================================
 if st.session_state.app_mode == "📊 एडवांस एनालाइज़र (All-in-One)":
-    st.title("📈 अल्टीमेट शेयर मार्केट एनालाइज़र (V12.0 PRO)")
+    st.title("📈 अल्टीमेट शेयर मार्केट एनालाइज़र (V13.0 Target Fixed)")
     
     try:
         nifty = yf.Ticker("^NSEI").history(period="1d")
@@ -112,7 +111,6 @@ if st.session_state.app_mode == "📊 एडवांस एनालाइज�
     
     stock_list = list(indian_stocks.keys())
     
-    # 1. मेमोरी से शेयर का इंडेक्स ढूँढना
     default_idx = 0
     if st.session_state.shared_ticker:
         for i, s in enumerate(stock_list):
@@ -120,21 +118,18 @@ if st.session_state.app_mode == "📊 एडवांस एनालाइज�
                 default_idx = i
                 break
                 
-    # 2. सिलेक्टबॉक्स बनाना
     selected_company = st.selectbox("शेयर चुनें या सर्च करें:", stock_list, index=default_idx)
     
-    # 3. बहुत ज़रूरी: जो शेयर चुना गया है, उसे वापस मेमोरी में पक्का कर देना ताकि बटन दबाने पर उड़े नहीं!
     match = re.search(r'\((.*?)\)', selected_company)
     if match:
         st.session_state.shared_ticker = match.group(1)
 
     ticker = st.session_state.shared_ticker + (".NS" if "NSE" in exchange else ".BO")
 
-    # 4. ऑटो-रन और मैन्युअल बटन लॉजिक
     do_analysis = st.button("स्मार्ट 360° एनालिसिस करें")
     
     if do_analysis or st.session_state.auto_run:
-        st.session_state.auto_run = False # काम होने के बाद ऑटो-रन बंद कर दो
+        st.session_state.auto_run = False 
         
         with st.spinner(f"🚀 {selected_company} का 360° डेटा लाया जा रहा है..."):
             try:
@@ -187,6 +182,7 @@ if st.session_state.app_mode == "📊 एडवांस एनालाइज�
                     st.write(f"बाज़ार के **{analyst_count} बड़े ब्रोकरेज हाउस** की राय | **टारगेट: ₹{target_price}**")
                     st.markdown(f'''<div style="width: 100%; background-color: #e6e6e6; border-radius: 10px; height: 30px; margin-bottom: 20px;"><div style="width: {meter_val}%; background-color: {color}; height: 100%; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;">{meter_val}% ({text})</div></div>''', unsafe_allow_html=True)
 
+                    # --- 100% FOOLPROOF HYBRID TARGET LOGIC ---
                     prev_high = data['High'].iloc[-2]
                     prev_low = data['Low'].iloc[-2]
                     prev_close = data['Close'].iloc[-2]
@@ -196,13 +192,22 @@ if st.session_state.app_mode == "📊 एडवांस एनालाइज�
                     r2 = pivot + (prev_high - prev_low)
                     r3 = prev_high + 2 * (pivot - prev_low)
                     
-                    stop_loss = (2 * pivot) - prev_high
+                    s1 = (2 * pivot) - prev_high
+                    s2 = pivot - (prev_high - prev_low)
                     
-                    if last_close > r2: final_target = r3
-                    elif last_close > r1: final_target = r2
-                    else: final_target = r1
+                    # जादुई फ़िल्टर: सिर्फ वही टारगेट चुनो जो अभी के भाव से बड़े हों
+                    if r1 > last_close: final_target = r1
+                    elif r2 > last_close: final_target = r2
+                    elif r3 > last_close: final_target = r3
+                    else: final_target = last_close * 1.03  # ब्रह्मास्त्र: अगर सारे पिवट टूट गए तो +3% टारगेट
 
-                    st.markdown("### 🎯 3. ऑटोमैटिक ट्रेड लेवल (स्मार्ट पिवट पॉइंट्स)")
+                    # जादुई फ़िल्टर: सिर्फ वही स्टॉप-लॉस चुनो जो अभी के भाव से छोटे हों
+                    if s1 < last_close: stop_loss = s1
+                    elif s2 < last_close: stop_loss = s2
+                    else: stop_loss = last_close * 0.98     # ब्रह्मास्त्र: -2% स्टॉप-लॉस
+                    # ----------------------------------------
+
+                    st.markdown("### 🎯 3. ऑटोमैटिक ट्रेड लेवल (बुलेटप्रूफ पिवट)")
                     c1, c2, c3 = st.columns(3)
                     c1.metric("एंट्री (अभी का भाव)", f"₹{last_close:.2f}")
                     c2.metric("🟢 टारगेट (मुनाफा बुक करें)", f"₹{final_target:.2f}")
@@ -327,7 +332,6 @@ elif st.session_state.app_mode == "🔍 सुपर स्कैनर (AI Scan
                     col1.markdown(f"**{res['name']}**")
                     col2.markdown(f"₹{res['price']:.2f}")
                     col3.markdown(f"**RSI:** {res['rsi']:.1f}")
-                    # इस बटन को दबाते ही अब ऑटो-रन चालू हो जाएगा!
                     col4.button("🔍 एनालाइज़ करें", key=f"btn_{res['ticker']}", on_click=switch_to_analyzer, args=(res['ticker'],))
                     st.markdown("---")
         else:
