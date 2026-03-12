@@ -5,6 +5,7 @@ import urllib.request
 import io
 import warnings
 import time
+import plotly.graph_objects as go
 warnings.filterwarnings('ignore')
 
 st.set_page_config(page_title="प्रो ट्रेडिंग टर्मिनल", layout="wide", page_icon="📈")
@@ -74,10 +75,6 @@ def calculate_indicators(data):
     ema_26 = data['Close'].ewm(span=26, adjust=False).mean()
     data['MACD'] = ema_12 - ema_26
     data['MACD_Signal'] = data['MACD'].ewm(span=9, adjust=False).mean()
-    
-    data['BB_std'] = data['Close'].rolling(window=20).std()
-    data['BB_upper'] = data['SMA_20'] + (data['BB_std'] * 2)
-    data['BB_lower'] = data['SMA_20'] - (data['BB_std'] * 2)
     return data
 
 # ---------------------------------------------------------
@@ -90,8 +87,19 @@ app_mode = st.sidebar.radio("मोड चुनें:", ["📊 एडवां
 # मोड 1: एडवांस एनालाइज़र
 # =========================================================
 if st.session_state.app_mode == "📊 एडवांस एनालाइज़र (All-in-One)":
-    st.title("📈 अल्टीमेट शेयर मार्केट एनालाइज़र (Live)")
+    st.title("📈 अल्टीमेट शेयर मार्केट एनालाइज़र (V10.0 PRO)")
     
+    # --- नया फीचर 1: मार्केट का लाइव मूड ---
+    try:
+        nifty = yf.Ticker("^NSEI").history(period="1d")
+        sensex = yf.Ticker("^BSESN").history(period="1d")
+        if not nifty.empty and not sensex.empty:
+            c1, c2 = st.columns(2)
+            c1.info(f"🌊 **Nifty 50 Live:** ₹{nifty['Close'].iloc[-1]:.2f}")
+            c2.warning(f"🌊 **Sensex Live:** ₹{sensex['Close'].iloc[-1]:.2f}")
+    except: pass
+    st.markdown("---")
+
     exchange = st.radio("एक्सचेंज:", ["NSE (.NS)", "BSE (.BO)"], horizontal=True)
     
     stock_list = list(indian_stocks.keys())
@@ -99,20 +107,19 @@ if st.session_state.app_mode == "📊 एडवांस एनालाइज�
     if st.session_state.target_ticker:
         for i, s in enumerate(stock_list):
             if f"({st.session_state.target_ticker})" in s:
-                default_idx = i
-                break
+                default_idx = i; break
         st.session_state.target_ticker = None
         
     selected_company = st.selectbox("शेयर चुनें या सर्च करें:", stock_list, index=default_idx)
     ticker = indian_stocks[selected_company] + (".NS" if "NSE" in exchange else ".BO")
 
     if st.button("स्मार्ट 360° एनालिसिस करें"):
-        with st.spinner(f"🚀 {selected_company} का डेटा लाया जा रहा है..."):
+        with st.spinner(f"🚀 {selected_company} का 360° डेटा लाया जा रहा है..."):
             try:
-                # yfinance को खुद अपना काम करने दें (बिना कस्टम सेशन के)
                 stock = yf.Ticker(ticker)
                 data = stock.history(period="1y")
                 info = stock.info
+                news = stock.news  # नया फीचर 3: न्यूज़
                 
                 if data.empty:
                     st.error("❌ डेटा नहीं मिला।")
@@ -120,6 +127,7 @@ if st.session_state.app_mode == "📊 एडवांस एनालाइज�
                     data = calculate_indicators(data)
                     last_close = data['Close'].iloc[-1]
                     
+                    # --- पुरानी चीज़ें: फंडामेंटल और वैल्यूएशन ---
                     high_52 = info.get('fiftyTwoWeekHigh', 'N/A')
                     low_52 = info.get('fiftyTwoWeekLow', 'N/A')
                     pe_ratio = info.get('trailingPE', 'N/A')
@@ -147,6 +155,7 @@ if st.session_state.app_mode == "📊 एडवांस एनालाइज�
                     
                     st.info(f"💡 **वैल्यूएशन चेक:** P/E Ratio के हिसाब से यह शेयर अभी **{pe_status}** है।")
 
+                    # --- पुरानी चीज़ें: एक्सपर्ट सेंटीमेंट मीटर ---
                     rec_key = info.get('recommendationKey', 'hold').lower()
                     if 'strong_buy' in rec_key: meter_val = 100; color = "#00b300"; text = "STRONG BUY"
                     elif 'buy' in rec_key: meter_val = 75; color = "#00cc66"; text = "BUY"
@@ -159,6 +168,7 @@ if st.session_state.app_mode == "📊 एडवांस एनालाइज�
                     st.write(f"बाज़ार के **{analyst_count} बड़े ब्रोकरेज हाउस** की राय | **टारगेट: ₹{target_price}**")
                     st.markdown(f'''<div style="width: 100%; background-color: #e6e6e6; border-radius: 10px; height: 30px; margin-bottom: 20px;"><div style="width: {meter_val}%; background-color: {color}; height: 100%; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;">{meter_val}% ({text})</div></div>''', unsafe_allow_html=True)
 
+                    # --- पुरानी चीज़ें: ऑटोमैटिक ट्रेड लेवल ---
                     prev_high = data['High'].iloc[-2]
                     prev_low = data['Low'].iloc[-2]
                     prev_close = data['Close'].iloc[-2]
@@ -172,13 +182,14 @@ if st.session_state.app_mode == "📊 एडवांस एनालाइज�
                     c2.metric("🟢 टारगेट (मुनाफा बुक करें)", f"₹{target_1:.2f}")
                     c3.metric("🔴 स्टॉप-लॉस (घाटा काटें)", f"₹{stop_loss:.2f}")
 
+                    # --- पुरानी चीज़ें: मास्टरमाइंड AI (सब कुछ वापस लाया गया) ---
                     last_rsi = data['RSI'].iloc[-1]
                     last_macd = data['MACD'].iloc[-1]
                     last_signal = data['MACD_Signal'].iloc[-1]
                     last_vol = data['Volume'].iloc[-1]
                     vol_sma = data['Vol_SMA'].iloc[-1]
 
-                    st.markdown("### 🧠 4. मास्टरमाइंड AI डिसीजन")
+                    st.markdown("### 🧠 4. मास्टरमाइंड AI डिसीजन (Full PRO)")
                     col_pro, col_con = st.columns(2)
                     pros, cons = [], []
                     
@@ -189,6 +200,13 @@ if st.session_state.app_mode == "📊 एडवांस एनालाइज�
                     if last_macd > last_signal: pros.append("🔥 **MACD:** बुलिश क्रॉसओवर।")
                     else: cons.append("❄️ **MACD:** बियरिश।")
                     
+                    # जो छूट गया था: वॉल्यूम, P/E और एक्सपर्ट्स
+                    if last_vol > (vol_sma * 1.5): pros.append(f"💥 **वॉल्यूम:** भारी खरीदारी हो रही है।")
+                    if "सस्ता" in pe_status: pros.append("💰 **वैल्यूएशन:** P/E के हिसाब से शेयर सस्ता है।")
+                    if "महंगा" in pe_status: cons.append("💸 **वैल्यूएशन:** P/E के हिसाब से शेयर काफी महंगा है।")
+                    if 'buy' in rec_key: pros.append(f"👔 **एक्सपर्ट्स:** एनालिस्ट्स खरीदने की सलाह दे रहे हैं।")
+                    elif 'sell' in rec_key: cons.append(f"👔 **एक्सपर्ट्स:** एनालिस्ट्स बेचने की सलाह दे रहे हैं।")
+                    
                     with col_pro:
                         st.success("✅ **मज़बूती (Pros)**")
                         for p in pros: st.write("- " + p)
@@ -196,8 +214,27 @@ if st.session_state.app_mode == "📊 एडवांस एनालाइज�
                         st.error("❌ **कमज़ोरी (Cons)**")
                         for c in cons: st.write("- " + c)
 
-                    st.markdown("### 📊 5. टेक्निकल चार्ट्स")
-                    st.line_chart(data[['Close', 'SMA_20', 'SMA_50']])
+                    # --- नया फीचर 2: कैंडलस्टिक और पुरानी चीज़: MACD चार्ट ---
+                    st.markdown("### 📊 5. टेक्निकल चार्ट्स (Candlestick + MACD)")
+                    
+                    fig = go.Figure(data=[go.Candlestick(x=data.index,
+                                    open=data['Open'], high=data['High'],
+                                    low=data['Low'], close=data['Close'], name='Price')])
+                    fig.add_trace(go.Scatter(x=data.index, y=data['SMA_20'], mode='lines', name='SMA 20', line=dict(color='blue')))
+                    fig.add_trace(go.Scatter(x=data.index, y=data['SMA_50'], mode='lines', name='SMA 50', line=dict(color='orange')))
+                    fig.update_layout(height=500, margin=dict(l=0, r=0, t=30, b=0), xaxis_rangeslider_visible=False)
+                    st.plotly_chart(fig, use_container_width=True)
+
+                    st.caption("नीचे MACD का मोमेंटम चार्ट है:")
+                    st.area_chart(data[['MACD', 'MACD_Signal']].tail(60))
+
+                    # --- नया फीचर 3: लाइव न्यूज़ ---
+                    st.markdown("### 📰 6. ताज़ा ब्रेकिंग न्यूज़ (Live)")
+                    if news:
+                        for n in news[:3]: # टॉप 3 खबरें
+                            st.write(f"🔹 **[{n['title']}]({n['link']})**")
+                    else:
+                        st.write("अभी कोई ताज़ा खबर नहीं है।")
 
             except Exception as e:
                 st.error(f"❌ तकनीकी खराबी: {e}")
@@ -240,11 +277,8 @@ elif st.session_state.app_mode == "🔍 सुपर स्कैनर (AI Scan
                     if (last_close > data['SMA_50'].iloc[-1]) and (50 <= last_rsi <= 70) and (last_macd > last_signal):
                         results.append({"name": name, "ticker": raw_ticker, "price": last_close, "rsi": last_rsi})
                 
-                # Yahoo ब्लॉक न करे, इसके लिए 0.3 सेकंड का ब्रेक
                 time.sleep(0.3)
-            except:
-                pass
-            
+            except: pass
             progress_bar.progress((i + 1) / total_count)
         
         st.success(f"✅ स्कैनिंग पूरी हो गई! ({len(results)} मास्टरपीस मिले)")
