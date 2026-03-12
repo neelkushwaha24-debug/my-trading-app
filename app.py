@@ -5,10 +5,25 @@ import urllib.request
 import io
 import warnings
 import time
+import re
 import plotly.graph_objects as go
 warnings.filterwarnings('ignore')
 
 st.set_page_config(page_title="प्रो ट्रेडिंग टर्मिनल", layout="wide", page_icon="📈")
+
+# --- ऐप की अनब्रेकेबल मेमोरी (Session State) ---
+if 'app_mode' not in st.session_state:
+    st.session_state.app_mode = "📊 एडवांस एनालाइज़र (All-in-One)"
+if 'shared_ticker' not in st.session_state:
+    st.session_state.shared_ticker = None
+if 'auto_run' not in st.session_state:
+    st.session_state.auto_run = False
+
+# जादुई कॉलबैक: जो स्कैनर से शेयर लाएगा और ऑटो-रन चालू करेगा
+def switch_to_analyzer(ticker_symbol):
+    st.session_state.shared_ticker = ticker_symbol
+    st.session_state.app_mode = "📊 एडवांस एनालाइज़र (All-in-One)"
+    st.session_state.auto_run = True  # बिना बटन दबाए एनालिसिस शुरू करने का कमांड!
 
 # ---------------------------------------------------------
 # 1. डेटाबेस लोडर
@@ -31,22 +46,6 @@ def get_all_stocks():
         return {"Reliance Industries": "RELIANCE", "Tata Motors": "TATAMOTORS", "State Bank of India": "SBIN"}
 
 indian_stocks = get_all_stocks()
-
-# --- ऐप की परमानेंट मेमोरी (Session State) का फिक्स ---
-if 'app_mode' not in st.session_state:
-    st.session_state.app_mode = "📊 एडवांस एनालाइज़र (All-in-One)"
-    
-# सिलेक्टबॉक्स को याद रखने के लिए परमानेंट की (Key)
-if 'selected_company_key' not in st.session_state:
-    st.session_state.selected_company_key = list(indian_stocks.keys())[0]
-
-def switch_to_analyzer(ticker_symbol):
-    st.session_state.app_mode = "📊 एडवांस एनालाइज़र (All-in-One)"
-    # सही शेयर को लिस्ट में ढूंढकर मेमोरी में लॉक कर देना
-    for s in indian_stocks.keys():
-        if f"({ticker_symbol})" in s:
-            st.session_state.selected_company_key = s
-            break
 
 nifty_50_list = {
     "Reliance": "RELIANCE", "TCS": "TCS", "HDFC Bank": "HDFCBANK", "ICICI Bank": "ICICIBANK", 
@@ -97,7 +96,7 @@ app_mode = st.sidebar.radio("मोड चुनें:", ["📊 एडवां
 # मोड 1: एडवांस एनालाइज़र
 # =========================================================
 if st.session_state.app_mode == "📊 एडवांस एनालाइज़र (All-in-One)":
-    st.title("📈 अल्टीमेट शेयर मार्केट एनालाइज़र (V11.0 PRO)")
+    st.title("📈 अल्टीमेट शेयर मार्केट एनालाइज़र (V12.0 PRO)")
     
     try:
         nifty = yf.Ticker("^NSEI").history(period="1d")
@@ -111,11 +110,32 @@ if st.session_state.app_mode == "📊 एडवांस एनालाइज�
 
     exchange = st.radio("एक्सचेंज:", ["NSE (.NS)", "BSE (.BO)"], horizontal=True)
     
-    # अब यह सिलेक्टबॉक्स कभी भी आपकी मर्ज़ी के बिना अपना शेयर नहीं बदलेगा!
-    selected_company = st.selectbox("शेयर चुनें या सर्च करें:", list(indian_stocks.keys()), key="selected_company_key")
-    ticker = indian_stocks[selected_company] + (".NS" if "NSE" in exchange else ".BO")
+    stock_list = list(indian_stocks.keys())
+    
+    # 1. मेमोरी से शेयर का इंडेक्स ढूँढना
+    default_idx = 0
+    if st.session_state.shared_ticker:
+        for i, s in enumerate(stock_list):
+            if f"({st.session_state.shared_ticker})" in s:
+                default_idx = i
+                break
+                
+    # 2. सिलेक्टबॉक्स बनाना
+    selected_company = st.selectbox("शेयर चुनें या सर्च करें:", stock_list, index=default_idx)
+    
+    # 3. बहुत ज़रूरी: जो शेयर चुना गया है, उसे वापस मेमोरी में पक्का कर देना ताकि बटन दबाने पर उड़े नहीं!
+    match = re.search(r'\((.*?)\)', selected_company)
+    if match:
+        st.session_state.shared_ticker = match.group(1)
 
-    if st.button("स्मार्ट 360° एनालिसिस करें"):
+    ticker = st.session_state.shared_ticker + (".NS" if "NSE" in exchange else ".BO")
+
+    # 4. ऑटो-रन और मैन्युअल बटन लॉजिक
+    do_analysis = st.button("स्मार्ट 360° एनालिसिस करें")
+    
+    if do_analysis or st.session_state.auto_run:
+        st.session_state.auto_run = False # काम होने के बाद ऑटो-रन बंद कर दो
+        
         with st.spinner(f"🚀 {selected_company} का 360° डेटा लाया जा रहा है..."):
             try:
                 stock = yf.Ticker(ticker)
@@ -167,7 +187,6 @@ if st.session_state.app_mode == "📊 एडवांस एनालाइज�
                     st.write(f"बाज़ार के **{analyst_count} बड़े ब्रोकरेज हाउस** की राय | **टारगेट: ₹{target_price}**")
                     st.markdown(f'''<div style="width: 100%; background-color: #e6e6e6; border-radius: 10px; height: 30px; margin-bottom: 20px;"><div style="width: {meter_val}%; background-color: {color}; height: 100%; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;">{meter_val}% ({text})</div></div>''', unsafe_allow_html=True)
 
-                    # --- स्मार्ट पिवट (Smart Pivot) लॉजिक फिक्स ---
                     prev_high = data['High'].iloc[-2]
                     prev_low = data['Low'].iloc[-2]
                     prev_close = data['Close'].iloc[-2]
@@ -177,9 +196,8 @@ if st.session_state.app_mode == "📊 एडवांस एनालाइज�
                     r2 = pivot + (prev_high - prev_low)
                     r3 = prev_high + 2 * (pivot - prev_low)
                     
-                    stop_loss = (2 * pivot) - prev_high # S1
+                    stop_loss = (2 * pivot) - prev_high
                     
-                    # अगर भाव R1 के ऊपर निकल गया, तो R2 टारगेट दिखाओ!
                     if last_close > r2: final_target = r3
                     elif last_close > r1: final_target = r2
                     else: final_target = r1
@@ -309,6 +327,7 @@ elif st.session_state.app_mode == "🔍 सुपर स्कैनर (AI Scan
                     col1.markdown(f"**{res['name']}**")
                     col2.markdown(f"₹{res['price']:.2f}")
                     col3.markdown(f"**RSI:** {res['rsi']:.1f}")
+                    # इस बटन को दबाते ही अब ऑटो-रन चालू हो जाएगा!
                     col4.button("🔍 एनालाइज़ करें", key=f"btn_{res['ticker']}", on_click=switch_to_analyzer, args=(res['ticker'],))
                     st.markdown("---")
         else:
