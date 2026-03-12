@@ -10,16 +10,6 @@ warnings.filterwarnings('ignore')
 
 st.set_page_config(page_title="प्रो ट्रेडिंग टर्मिनल", layout="wide", page_icon="📈")
 
-# --- ऐप की मेमोरी (Session State) ---
-if 'app_mode' not in st.session_state:
-    st.session_state.app_mode = "📊 एडवांस एनालाइज़र (All-in-One)"
-if 'target_ticker' not in st.session_state:
-    st.session_state.target_ticker = None
-
-def switch_to_analyzer(ticker_symbol):
-    st.session_state.target_ticker = ticker_symbol
-    st.session_state.app_mode = "📊 एडवांस एनालाइज़र (All-in-One)"
-
 # ---------------------------------------------------------
 # 1. डेटाबेस लोडर
 # ---------------------------------------------------------
@@ -41,6 +31,22 @@ def get_all_stocks():
         return {"Reliance Industries": "RELIANCE", "Tata Motors": "TATAMOTORS", "State Bank of India": "SBIN"}
 
 indian_stocks = get_all_stocks()
+
+# --- ऐप की परमानेंट मेमोरी (Session State) का फिक्स ---
+if 'app_mode' not in st.session_state:
+    st.session_state.app_mode = "📊 एडवांस एनालाइज़र (All-in-One)"
+    
+# सिलेक्टबॉक्स को याद रखने के लिए परमानेंट की (Key)
+if 'selected_company_key' not in st.session_state:
+    st.session_state.selected_company_key = list(indian_stocks.keys())[0]
+
+def switch_to_analyzer(ticker_symbol):
+    st.session_state.app_mode = "📊 एडवांस एनालाइज़र (All-in-One)"
+    # सही शेयर को लिस्ट में ढूंढकर मेमोरी में लॉक कर देना
+    for s in indian_stocks.keys():
+        if f"({ticker_symbol})" in s:
+            st.session_state.selected_company_key = s
+            break
 
 nifty_50_list = {
     "Reliance": "RELIANCE", "TCS": "TCS", "HDFC Bank": "HDFCBANK", "ICICI Bank": "ICICIBANK", 
@@ -76,7 +82,6 @@ def calculate_indicators(data):
     data['MACD'] = ema_12 - ema_26
     data['MACD_Signal'] = data['MACD'].ewm(span=9, adjust=False).mean()
     
-    # (जो मिस हो गया था) Bollinger Bands 
     data['BB_std'] = data['Close'].rolling(window=20).std()
     data['BB_upper'] = data['SMA_20'] + (data['BB_std'] * 2)
     data['BB_lower'] = data['SMA_20'] - (data['BB_std'] * 2)
@@ -92,9 +97,8 @@ app_mode = st.sidebar.radio("मोड चुनें:", ["📊 एडवां
 # मोड 1: एडवांस एनालाइज़र
 # =========================================================
 if st.session_state.app_mode == "📊 एडवांस एनालाइज़र (All-in-One)":
-    st.title("📈 अल्टीमेट शेयर मार्केट एनालाइज़र (FINAL PRO)")
+    st.title("📈 अल्टीमेट शेयर मार्केट एनालाइज़र (V11.0 PRO)")
     
-    # --- मार्केट का लाइव मूड ---
     try:
         nifty = yf.Ticker("^NSEI").history(period="1d")
         sensex = yf.Ticker("^BSESN").history(period="1d")
@@ -107,15 +111,8 @@ if st.session_state.app_mode == "📊 एडवांस एनालाइज�
 
     exchange = st.radio("एक्सचेंज:", ["NSE (.NS)", "BSE (.BO)"], horizontal=True)
     
-    stock_list = list(indian_stocks.keys())
-    default_idx = 0
-    if st.session_state.target_ticker:
-        for i, s in enumerate(stock_list):
-            if f"({st.session_state.target_ticker})" in s:
-                default_idx = i; break
-        st.session_state.target_ticker = None
-        
-    selected_company = st.selectbox("शेयर चुनें या सर्च करें:", stock_list, index=default_idx)
+    # अब यह सिलेक्टबॉक्स कभी भी आपकी मर्ज़ी के बिना अपना शेयर नहीं बदलेगा!
+    selected_company = st.selectbox("शेयर चुनें या सर्च करें:", list(indian_stocks.keys()), key="selected_company_key")
     ticker = indian_stocks[selected_company] + (".NS" if "NSE" in exchange else ".BO")
 
     if st.button("स्मार्ट 360° एनालिसिस करें"):
@@ -131,7 +128,6 @@ if st.session_state.app_mode == "📊 एडवांस एनालाइज�
                     data = calculate_indicators(data)
                     last_close = data['Close'].iloc[-1]
                     
-                    # --- फंडामेंटल और वैल्यूएशन ---
                     high_52 = info.get('fiftyTwoWeekHigh', 'N/A')
                     low_52 = info.get('fiftyTwoWeekLow', 'N/A')
                     pe_ratio = info.get('trailingPE', 'N/A')
@@ -159,7 +155,6 @@ if st.session_state.app_mode == "📊 एडवांस एनालाइज�
                     
                     st.info(f"💡 **वैल्यूएशन चेक:** P/E Ratio के हिसाब से यह शेयर अभी **{pe_status}** है।")
 
-                    # --- एक्सपर्ट सेंटीमेंट मीटर ---
                     rec_key = info.get('recommendationKey', 'hold').lower()
                     if 'strong_buy' in rec_key: meter_val = 100; color = "#00b300"; text = "STRONG BUY"
                     elif 'buy' in rec_key: meter_val = 75; color = "#00cc66"; text = "BUY"
@@ -172,21 +167,29 @@ if st.session_state.app_mode == "📊 एडवांस एनालाइज�
                     st.write(f"बाज़ार के **{analyst_count} बड़े ब्रोकरेज हाउस** की राय | **टारगेट: ₹{target_price}**")
                     st.markdown(f'''<div style="width: 100%; background-color: #e6e6e6; border-radius: 10px; height: 30px; margin-bottom: 20px;"><div style="width: {meter_val}%; background-color: {color}; height: 100%; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;">{meter_val}% ({text})</div></div>''', unsafe_allow_html=True)
 
-                    # --- ऑटोमैटिक ट्रेड लेवल ---
+                    # --- स्मार्ट पिवट (Smart Pivot) लॉजिक फिक्स ---
                     prev_high = data['High'].iloc[-2]
                     prev_low = data['Low'].iloc[-2]
                     prev_close = data['Close'].iloc[-2]
                     pivot = (prev_high + prev_low + prev_close) / 3
-                    target_1 = (2 * pivot) - prev_low
-                    stop_loss = (2 * pivot) - prev_high
+                    
+                    r1 = (2 * pivot) - prev_low
+                    r2 = pivot + (prev_high - prev_low)
+                    r3 = prev_high + 2 * (pivot - prev_low)
+                    
+                    stop_loss = (2 * pivot) - prev_high # S1
+                    
+                    # अगर भाव R1 के ऊपर निकल गया, तो R2 टारगेट दिखाओ!
+                    if last_close > r2: final_target = r3
+                    elif last_close > r1: final_target = r2
+                    else: final_target = r1
 
-                    st.markdown("### 🎯 3. ऑटोमैटिक ट्रेड लेवल (पिवट पॉइंट्स)")
+                    st.markdown("### 🎯 3. ऑटोमैटिक ट्रेड लेवल (स्मार्ट पिवट पॉइंट्स)")
                     c1, c2, c3 = st.columns(3)
                     c1.metric("एंट्री (अभी का भाव)", f"₹{last_close:.2f}")
-                    c2.metric("🟢 टारगेट (मुनाफा बुक करें)", f"₹{target_1:.2f}")
+                    c2.metric("🟢 टारगेट (मुनाफा बुक करें)", f"₹{final_target:.2f}")
                     c3.metric("🔴 स्टॉप-लॉस (घाटा काटें)", f"₹{stop_loss:.2f}")
 
-                    # --- मास्टरमाइंड AI (सब कुछ वापस लाया गया + Bollinger) ---
                     last_rsi = data['RSI'].iloc[-1]
                     last_macd = data['MACD'].iloc[-1]
                     last_signal = data['MACD_Signal'].iloc[-1]
@@ -201,17 +204,12 @@ if st.session_state.app_mode == "📊 एडवांस एनालाइज�
                     
                     if data['SMA_20'].iloc[-1] > data['SMA_50'].iloc[-1]: pros.append("📈 **ट्रेंड:** मज़बूत अपट्रेंड।")
                     else: cons.append("📉 **ट्रेंड:** डाउनट्रेंड है।")
-                    
                     if last_rsi < 40: pros.append(f"🔋 **RSI:** सस्ता (Oversold)।")
                     elif last_rsi > 70: cons.append(f"⚠️ **RSI:** बहुत महंगा (Overbought)।")
-                    
                     if last_macd > last_signal: pros.append("🔥 **MACD:** बुलिश क्रॉसओवर।")
                     else: cons.append("❄️ **MACD:** बियरिश।")
-                    
-                    # (जो मिस हो गया था) Bollinger Bands चेक
                     if last_close > bb_upper: cons.append("⚠️ **Bollinger:** शेयर बैंड के बाहर है, प्रॉफिट बुकिंग आ सकती है।")
                     elif last_close < bb_lower: pros.append("🔋 **Bollinger:** शेयर बैंड के निचले हिस्से पर है (Bounce back आ सकता है)।")
-                    
                     if last_vol > (vol_sma * 1.5): pros.append(f"💥 **वॉल्यूम:** भारी खरीदारी हो रही है।")
                     if "सस्ता" in pe_status: pros.append("💰 **वैल्यूएशन:** P/E के हिसाब से शेयर सस्ता है।")
                     if "महंगा" in pe_status: cons.append("💸 **वैल्यूएशन:** P/E के हिसाब से शेयर काफी महंगा है।")
@@ -225,7 +223,6 @@ if st.session_state.app_mode == "📊 एडवांस एनालाइज�
                         st.error("❌ **कमज़ोरी (Cons)**")
                         for c in cons: st.write("- " + c)
 
-                    # --- टेक्निकल चार्ट्स (Candlestick + MACD + Volume) ---
                     st.markdown("### 📊 5. टेक्निकल चार्ट्स (Pro View)")
                     
                     fig = go.Figure(data=[go.Candlestick(x=data.index,
@@ -242,7 +239,6 @@ if st.session_state.app_mode == "📊 एडवांस एनालाइज�
                     st.caption("नीचे MACD का मोमेंटम चार्ट है:")
                     st.area_chart(data[['MACD', 'MACD_Signal']].tail(60))
 
-                    # --- ताज़ा ब्रेकिंग न्यूज़ ---
                     st.markdown("### 📰 6. ताज़ा ब्रेकिंग न्यूज़ (Live)")
                     try:
                         news_data = stock.news
